@@ -1,0 +1,125 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Pipeline Instance Life-cycle Lambda Stack",
+    "Parameters": {
+        "S3BucketName": {
+            "Description": "destination s3 bucket for lambda artifact",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+
+        "ScheduledRule": {
+            "Type": "AWS::Events::Rule",
+            "Properties": {
+                "Description": "ScheduledRule",
+                "ScheduleExpression": "rate(5 minutes)",
+                "State": "ENABLED",
+                "Targets": [{
+                    "Arn": {
+                        "Fn::GetAtt": ["LambdaFunction", "Arn"]
+                    },
+                    "Id": "pipelineinstancelifecyclelambda"
+                }]
+            }
+        },
+
+        "PermissionForEventsToInvokeLambda": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Ref": "LambdaFunction"
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "events.amazonaws.com",
+                "SourceArn": {
+                    "Fn::GetAtt": ["ScheduledRule", "Arn"]
+                }
+            }
+        },
+
+        "LambdaFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Code": {
+                    "S3Bucket": {
+                        "Ref": "S3BucketName"
+                    },
+                    "S3Key": "lifecycle.zip"
+                },
+                "Description": "Pipeline Instance Life-Cycle Lambda - Terminate old instances automatically.",
+                "FunctionName": "pipelineinstancelifecyclelambda",
+                "Handler": "lifecycle",
+                "MemorySize": 128,
+                "Role": {
+                    "Fn::GetAtt": ["PipelineInstanceLifecycleLambdaRole", "Arn"]
+                },
+                "Runtime": "go1.x",
+                "Timeout": 5
+            }
+        },
+
+        "LambdaPolicy": {
+            "Type": "AWS::IAM::ManagedPolicy",
+            "Properties": {
+                "Description": "Lambda policy for Pipeline Instance Lifecycle",
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                            "Effect": "Allow",
+                            "Action": [
+                                "lambda:Invoke"
+                            ],
+                            "Resource": "arn:aws:lambda:::pipelineinstancelifecyclelambda"
+                        },
+                        {
+
+                            "Effect": "Allow",
+                            "Action": [
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents"
+                            ],
+                            "Resource": "arn:aws:logs:*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "ec2:TerminateInstances",
+                                "ec2:StopInstances"
+                            ],
+                            "Resource": "arn:aws:ec2:*:*:instance/*"
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": "ec2:DescribeInstances",
+                            "Resource": "*"
+                        }
+
+                    ]
+                }
+            }
+        },
+
+        "PipelineInstanceLifecycleLambdaRole": {
+
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "PipelineInstanceLifecycleLambdaRole",
+                "ManagedPolicyArns": [{
+                    "Ref": "LambdaPolicy"
+                }],
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": "lambda.amazonaws.com"
+                        },
+                        "Action": "sts:AssumeRole"
+                    }]
+                }
+            }
+        }
+    }
+}
